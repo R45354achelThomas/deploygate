@@ -1,79 +1,79 @@
-"""Unified reporter that aggregates GitHub and Slack notifications."""
+"""High-level reporter that orchestrates GitHub, Slack, and history recording."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import List, Optional
 
-from deploygate.checklist import Checklist
 from deploygate import github, slack
+from deploygate.checklist import Checklist
 
 
 @dataclass
 class ReporterConfig:
-    """Configuration for the unified reporter."""
+    """Configuration for the Reporter."""
 
-    slack_webhook_url: Optional[str] = None
-    slack_channel: Optional[str] = None
-    slack_username: str = "DeployGate"
-    slack_icon_emoji: str = ":rocket:"
-    github_enabled: bool = True
-    exit_on_failure: bool = True
-    extra_context: dict = field(default_factory=dict)
+    slack_webhook: Optional[str] = None
+    """If set, a Slack notification is sent after every run."""
+
+    history_file: Optional[str] = None
+    """If set, results are appended to this JSON history file."""
+
+    fail_on_error: bool = True
+    """Whether an errored check should be treated as a failure."""
 
 
 class Reporter:
-    """Runs all configured reporters against a completed checklist."""
+    """Runs all post-checklist reporting side-effects in one place."""
 
-    def __init__(self, config: ReporterConfig) -> None:
-        self.config = config
-        self._errors: list[str] = []
+    def __init__(self, config: Optional[ReporterConfig] = None) -> None:
+        self.config: ReporterConfig = config or ReporterConfig()
+        self._errors: List[str] = []
 
-    def report(self, checklist: Checklist) -> bool:
-        """Send reports to all configured destinations.
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
 
-        Returns True if all reports were sent successfully.
-        """
-        success = True
-
-        if self.config.github_enabled and github.is_github_actions():
-            try:
-                github.report(checklist)
-            except Exception as exc:  # pragma: no cover
-                self._errors.append(f"GitHub reporting failed: {exc}")
-                success = False
-
-        if self.config.slack_webhook_url:
-            try:
-                slack.notify(
-                    checklist,
-                    webhook_url=self.config.slack_webhook_url,
-                    channel=self.config.slack_channel,
-                    username=self.config.slack_username,
-                    icon_emoji=self.config.slack_icon_emoji,
-                )
-            except Exception as exc:  # pragma: no cover
-                self._errors.append(f"Slack reporting failed: {exc}")
-                success = False
-
-        return success
+    def report(self, checklist: Checklist) -> None:
+        """Execute all configured reporters for *checklist*."""
+        self._errors.clear()
+        self._report_github(checklist)
+        self._report_slack(checklist)
+        self._record_history(checklist)
 
     @property
-    def errors(self) -> list[str]:
-        """Return any errors encountered during reporting."""
+    def errors(self) -> List[str]:
+        """Accumulated non-fatal errors from the last :meth:`report` call."""
         return list(self._errors)
 
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
 
-def build_reporter_from_env() -> Reporter:
-    """Build a Reporter using environment variables for configuration."""
-    import os
+    def _report_github(self, checklist: Checklist) -> None:
+        if not github.is_github_actions():
+            return
+        try:
+            github.report(checklist)
+        except Exception as exc:  # pragma: no cover
+            self._errors.append(f"GitHub reporting failed: {exc}")
 
-    config = ReporterConfig(
-        slack_webhook_url=os.environ.get("DEPLOYGATE_SLACK_WEBHOOK_URL"),
-        slack_channel=os.environ.get("DEPLOYGATE_SLACK_CHANNEL"),
-        slack_username=os.environ.get("DEPLOYGATE_SLACK_USERNAME", "DeployGate"),
-        slack_icon_emoji=os.environ.get("DEPLOYGATE_SLACK_ICON_EMOJI", ":rocket:"),
-        github_enabled=os.environ.get("DEPLOYGATE_GITHUB_ENABLED", "true").lower() == "true",
-        exit_on_failure=os.environ.get("DEPLOYGATE_EXIT_ON_FAILURE", "true").lower() == "true",
-    )
-    return Reporter(config)
+    def _report_slack(self, checklist: Checklist) -> None:
+        webhook = self.config.slack_webhook
+        if not webhook:
+            return
+        try:
+            slack.notify(checklist, webhook)
+        except Exception as exc:
+            self._errors.append(f"Slack notification failed: {exc}")
+
+    def _record_history(self, checklist: Checklist) -> None:
+        path = self.config.history_file
+        if not path:
+            return
+        try:
+            from deploygate import history as _history
+
+            _history.record(checklist, path)
+        except Exception as exc:
+            self._errors.append(f"History recording failed: {exc}")
