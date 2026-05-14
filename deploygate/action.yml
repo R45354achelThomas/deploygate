@@ -1,0 +1,56 @@
+name: "DeployGate"
+description: "Lightweight pre-deploy checklist runner with Slack notifications"
+author: "deploygate"
+
+branding:
+  icon: "check-circle"
+  color: "green"
+
+inputs:
+  checklist:
+    description: "Path to the YAML checklist file"
+    required: true
+    default: ".deploygate.yml"
+
+  slack_webhook:
+    description: "Slack Incoming Webhook URL for notifications"
+    required: false
+    default: ""
+
+  fail_on_error:
+    description: "Fail the workflow step if any check fails"
+    required: false
+    default: "true"
+
+outputs:
+  passed:
+    description: "'true' if all checks passed, 'false' otherwise"
+
+  checklist_name:
+    description: "Name of the checklist that was executed"
+
+  failed_checks:
+    description: "Comma-separated list of failed check names"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
+
+    - name: Install deploygate
+      shell: bash
+      run: pip install deploygate
+
+    - name: Run checklist
+      shell: bash
+      env:
+        DEPLOYGATE_CHECKLIST: ${{ inputs.checklist }}
+        DEPLOYGATE_SLACK_WEBHOOK: ${{ inputs.slack_webhook }}
+        DEPLOYGATE_FAIL_ON_ERROR: ${{ inputs.fail_on_error }}
+      run: |
+        deploygate run "$DEPLOYGATE_CHECKLIST" \
+          $( [ -n "$DEPLOYGATE_SLACK_WEBHOOK" ] && echo "--slack-webhook $DEPLOYGATE_SLACK_WEBHOOK" ) \
+          $( [ "$DEPLOYGATE_FAIL_ON_ERROR" = "true" ] && echo "--fail-on-error" )
