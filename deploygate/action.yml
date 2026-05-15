@@ -1,56 +1,80 @@
-name: "DeployGate"
-description: "Lightweight pre-deploy checklist runner with Slack notifications"
-author: "deploygate"
-
-branding:
-  icon: "check-circle"
-  color: "green"
+name: DeployGate
+description: >-
+  Lightweight pre-deploy checklist runner with GitHub Actions and Slack integration.
 
 inputs:
   checklist:
-    description: "Path to the YAML checklist file"
+    description: Path to the checklist YAML/JSON file.
     required: true
-    default: ".deploygate.yml"
-
   slack_webhook:
-    description: "Slack Incoming Webhook URL for notifications"
+    description: Slack incoming webhook URL for notifications.
     required: false
     default: ""
-
-  fail_on_error:
-    description: "Fail the workflow step if any check fails"
+  history_file:
+    description: Path to the JSON file used to persist run history.
     required: false
-    default: "true"
+    default: ".deploygate_history.json"
+  email_to:
+    description: Comma-separated list of email recipients for notifications.
+    required: false
+    default: ""
+  email_from:
+    description: Sender address used for email notifications.
+    required: false
+    default: ""
+  smtp_host:
+    description: SMTP host for email delivery.
+    required: false
+    default: "localhost"
+  smtp_port:
+    description: SMTP port for email delivery.
+    required: false
+    default: "25"
+  dashboard_file:
+    description: Path to write the HTML dashboard file.
+    required: false
+    default: ""
+  metrics:
+    description: Print aggregate metrics from history after the run.
+    required: false
+    default: "false"
 
 outputs:
   passed:
-    description: "'true' if all checks passed, 'false' otherwise"
-
-  checklist_name:
-    description: "Name of the checklist that was executed"
-
-  failed_checks:
-    description: "Comma-separated list of failed check names"
+    description: "'true' if all checks passed, 'false' otherwise."
+  failed_count:
+    description: Number of checks that failed.
+  passed_count:
+    description: Number of checks that passed.
+  metrics_table:
+    description: Formatted metrics table (only when metrics input is 'true').
 
 runs:
-  using: "composite"
+  using: composite
   steps:
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: "3.11"
-
     - name: Install deploygate
       shell: bash
-      run: pip install deploygate
+      run: pip install --quiet deploygate
 
     - name: Run checklist
       shell: bash
       env:
-        DEPLOYGATE_CHECKLIST: ${{ inputs.checklist }}
-        DEPLOYGATE_SLACK_WEBHOOK: ${{ inputs.slack_webhook }}
-        DEPLOYGATE_FAIL_ON_ERROR: ${{ inputs.fail_on_error }}
+        SLACK_WEBHOOK: ${{ inputs.slack_webhook }}
+        EMAIL_TO: ${{ inputs.email_to }}
+        EMAIL_FROM: ${{ inputs.email_from }}
+        SMTP_HOST: ${{ inputs.smtp_host }}
+        SMTP_PORT: ${{ inputs.smtp_port }}
       run: |
-        deploygate run "$DEPLOYGATE_CHECKLIST" \
-          $( [ -n "$DEPLOYGATE_SLACK_WEBHOOK" ] && echo "--slack-webhook $DEPLOYGATE_SLACK_WEBHOOK" ) \
-          $( [ "$DEPLOYGATE_FAIL_ON_ERROR" = "true" ] && echo "--fail-on-error" )
+        python -m deploygate.cli \
+          "${{ inputs.checklist }}" \
+          --history "${{ inputs.history_file }}" \
+          ${{ inputs.dashboard_file != '' && format('--dashboard "{0}"', inputs.dashboard_file) || '' }}
+
+    - name: Print metrics
+      if: ${{ inputs.metrics == 'true' }}
+      shell: bash
+      run: |
+        python -m deploygate.cli_metrics "${{ inputs.history_file }}" | tee /tmp/dg_metrics.txt
+        echo "metrics_table<<EOF" >> $GITHUB_OUTPUT
+        cat /tmp/dg_metrics.txt >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
