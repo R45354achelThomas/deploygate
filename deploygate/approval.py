@@ -39,11 +39,22 @@ def _utcnow() -> str:
 
 
 def load_approvals(path: Path) -> List[ApprovalEntry]:
-    """Load approval entries from a JSON file."""
+    """Load approval entries from a JSON file.
+
+    Returns an empty list if the file does not exist.
+    Raises ``ValueError`` if the file contains invalid JSON or unexpected data.
+    """
     if not path.exists():
         return []
     with path.open() as fh:
-        data = json.load(fh)
+        try:
+            data = json.load(fh)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"Approval file {path} contains invalid JSON: {exc}") from exc
+    if not isinstance(data, list):
+        raise ValueError(
+            f"Approval file {path} must contain a JSON array, got {type(data).__name__}"
+        )
     return [ApprovalEntry.from_dict(d) for d in data]
 
 
