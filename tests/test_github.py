@@ -71,6 +71,13 @@ def test_summary_contains_check_names(passing_checklist):
     assert "Tests" in md
 
 
+def test_summary_contains_messages(passing_checklist):
+    """Ensure check messages are included in the generated markdown."""
+    md = build_summary_markdown(passing_checklist)
+    assert "All good" in md
+    assert "100% pass" in md
+
+
 def test_report_writes_outputs(github_output_env, passing_checklist):
     report(passing_checklist)
     content = github_output_env.read_text()
