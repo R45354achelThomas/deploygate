@@ -26,6 +26,19 @@ def failing_checklist():
     return cl
 
 
+@pytest.fixture()
+def github_output_env(tmp_path, monkeypatch):
+    """Set up a temporary GITHUB_OUTPUT file and patch the module-level variable."""
+    import deploygate.github as gh
+
+    output_file = tmp_path / "github_output"
+    output_file.touch()
+    monkeypatch.setenv("GITHUB_OUTPUT", str(output_file))
+    monkeypatch.setattr(gh, "GITHUB_OUTPUT", str(output_file))
+    monkeypatch.setattr(gh, "GITHUB_STEP_SUMMARY", "")
+    return output_file
+
+
 def test_summary_contains_checklist_name(passing_checklist):
     md = build_summary_markdown(passing_checklist)
     assert "Release v1.0" in md
@@ -58,33 +71,16 @@ def test_summary_contains_check_names(passing_checklist):
     assert "Tests" in md
 
 
-def test_report_writes_outputs(tmp_path, monkeypatch, passing_checklist):
-    output_file = tmp_path / "github_output"
-    output_file.touch()
-    monkeypatch.setenv("GITHUB_OUTPUT", str(output_file))
-    monkeypatch.setenv("GITHUB_STEP_SUMMARY", "")
-
-    import deploygate.github as gh
-    monkeypatch.setattr(gh, "GITHUB_OUTPUT", str(output_file))
-    monkeypatch.setattr(gh, "GITHUB_STEP_SUMMARY", "")
-
+def test_report_writes_outputs(github_output_env, passing_checklist):
     report(passing_checklist)
-    content = output_file.read_text()
+    content = github_output_env.read_text()
     assert "passed=true" in content
     assert "checklist_name=Release v1.0" in content
     assert "failed_checks=" in content
 
 
-def test_report_failed_checks_listed(tmp_path, monkeypatch, failing_checklist):
-    output_file = tmp_path / "github_output"
-    output_file.touch()
-    monkeypatch.setenv("GITHUB_OUTPUT", str(output_file))
-
-    import deploygate.github as gh
-    monkeypatch.setattr(gh, "GITHUB_OUTPUT", str(output_file))
-    monkeypatch.setattr(gh, "GITHUB_STEP_SUMMARY", "")
-
+def test_report_failed_checks_listed(github_output_env, failing_checklist):
     report(failing_checklist)
-    content = output_file.read_text()
+    content = github_output_env.read_text()
     assert "passed=false" in content
     assert "Tests" in content
