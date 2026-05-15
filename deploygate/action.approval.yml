@@ -1,0 +1,72 @@
+name: "DeployGate Approval Gate"
+description: "Record or verify a deploy approval inside a GitHub Actions workflow."
+author: "deploygate"
+
+inputs:
+  command:
+    description: "Sub-command to run: 'approve' or 'status'."
+    required: true
+    default: "status"
+
+  checklist:
+    description: "Name of the checklist to approve or check."
+    required: true
+
+  approved_by:
+    description: "Identity of the approver (required for 'approve' command)."
+    required: false
+    default: ""
+
+  note:
+    description: "Optional free-text note attached to the approval."
+    required: false
+    default: ""
+
+  approval_file:
+    description: "Path to the approval store JSON file."
+    required: false
+    default: ".deploygate/approvals.json"
+
+outputs:
+  approved:
+    description: "'true' if the checklist is approved, 'false' otherwise."
+
+  approved_by:
+    description: "Identity of the most recent approver (empty if none)."
+
+  approved_at:
+    description: "ISO-8601 timestamp of the most recent approval (empty if none)."
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
+
+    - name: Install deploygate
+      shell: bash
+      run: pip install deploygate
+
+    - name: Run approval command
+      shell: bash
+      run: |
+        if [ "${{ inputs.command }}" = "approve" ]; then
+          deploygate-approval \
+            --file "${{ inputs.approval_file }}" \
+            approve "${{ inputs.checklist }}" \
+            --by "${{ inputs.approved_by }}" \
+            --note "${{ inputs.note }}"
+          echo "approved=true" >> "$GITHUB_OUTPUT"
+          echo "approved_by=${{ inputs.approved_by }}" >> "$GITHUB_OUTPUT"
+        else
+          if deploygate-approval \
+               --file "${{ inputs.approval_file }}" \
+               status "${{ inputs.checklist }}"; then
+            echo "approved=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "approved=false" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+        fi
