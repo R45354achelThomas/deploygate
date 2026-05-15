@@ -79,6 +79,12 @@ def test_badge_contains_label(passing_checklist: Checklist) -> None:
     assert "deploygate" in svg
 
 
+def test_badge_svg_is_not_empty(passing_checklist: Checklist) -> None:
+    """Ensure build_badge never returns an empty or whitespace-only string."""
+    svg = build_badge(passing_checklist)
+    assert svg.strip() != ""
+
+
 # ---------------------------------------------------------------------------
 # write_badge
 # ---------------------------------------------------------------------------
@@ -95,3 +101,13 @@ def test_write_badge_file_content(tmp_path, failing_checklist: Checklist) -> Non
     write_badge(failing_checklist, out)
     content = out.read_text(encoding="utf-8")
     assert "failing" in content
+
+
+def test_write_badge_file_matches_build_badge(
+    tmp_path, passing_checklist: Checklist
+) -> None:
+    """Content written to disk should match what build_badge returns directly."""
+    out = tmp_path / "badge.svg"
+    expected = build_badge(passing_checklist)
+    write_badge(passing_checklist, out)
+    assert out.read_text(encoding="utf-8") == expected
